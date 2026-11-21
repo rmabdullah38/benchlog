@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { parseSpecs } from "./lib";
 import { useBenchStore } from "./useBenchStore";
 import { ActivityPanel } from "./components/ActivityPanel";
@@ -40,21 +41,21 @@ export function BenchApp() {
       />
       {s.connectivity === "offline" && <OfflineBanner />}
 
-      <div className="sticky top-[57px] z-20 flex border-b bg-background/90 backdrop-blur xl:hidden" role="tablist">
+      <div className="sticky top-[57px] z-20 flex border-b bg-background/90 backdrop-blur md:hidden" role="tablist">
         {(["notebook", "panel"] as const).map((v) => (
-          <button key={v} role="tab" aria-selected={mobileView === v} onClick={() => setMobileView(v)}
-            className={cn("flex-1 py-2 text-sm", mobileView === v ? "border-b-2 border-foreground font-medium" : "text-muted-foreground")}>
+          <Button key={v} variant="ghost" role="tab" aria-selected={mobileView === v} onClick={() => setMobileView(v)}
+            className={cn("flex-1 rounded-none py-2 text-sm", mobileView === v ? "border-b-2 border-foreground font-medium" : "text-muted-foreground")}>
             {v === "notebook" ? "Notebook" : "Insights"}
-          </button>
+          </Button>
         ))}
       </div>
 
-      <main className="mx-auto grid  px-4 py-5 max-w-3xl xl:max-w-[1280px] xl:grid-cols-[minmax(0,1fr)_380px] gap-8">
-        <section className={cn("min-w-0 space-y-4", mobileView !== "notebook" && "hidden xl:block")} aria-label="Notebook">
+      <main className="mx-auto grid max-w-[1280px] gap-6 px-4 py-5 md:grid-cols-[minmax(0,1fr)_320px] lg:grid-cols-[minmax(0,1fr)_380px]">
+        <section className={cn("min-w-0 space-y-4", mobileView !== "notebook" && "hidden md:block")} aria-label="Notebook">
           <Composer onLogEntry={s.onLogEntry} offline={s.connectivity === "offline"} />
           <Timeline entries={s.entries} specs={specs} highlightSeq={hl} onDelete={s.onDelete} onRetry={s.onRetry} onEditMeasurement={s.onEditMeasurement} onLoadSample={s.onLoadSample} />
         </section>
-        <aside className={cn("min-w-0 xl:sticky xl:top-[72px] xl:max-h-[calc(100vh-88px)] xl:overflow-y-auto", mobileView !== "panel" && "hidden xl:block")} aria-label="Insights">
+        <aside className={cn("min-w-0 md:sticky md:top-[72px] md:self-start md:max-h-[calc(100vh-88px)] md:overflow-y-auto", mobileView !== "panel" && "hidden md:block")} aria-label="Insights">
           <SidePanel tab={tab} onTab={setTab}
             ask={<AskPanel answer={s.answer} onAsk={s.onAsk} onCite={cite} />}
             report={<ReportPanel report={s.report} onWriteReport={s.onWriteReport} onCite={cite} />}

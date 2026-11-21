@@ -78,14 +78,20 @@ export async function downloadOnDeviceModel(onProgress: (p: number) => void) {
  * Loads Gemini Nano into memory ahead of the first real note. The first on-device call
  * otherwise pays a ~20 s cold start; the SDK keeps the session alive afterwards.
  */
-let warmed = false;
+let warmed: { destroy(): void } | null = null;
 export async function warmUpOnDevice() {
   if (warmed) return;
-  warmed = true;
+  const LM = languageModel();
+  if (!LM) return;
   try {
-    await model("structure", InferenceMode.ONLY_ON_DEVICE).generateContent("Raw note:\nwarm-up, ignore");
+    // Creating a session loads the weights into memory without running any inference, so it
+    // never competes with a real note. Keeping the reference keeps the model resident.
+    warmed = await LM.create({
+      expectedInputs: [{ type: "text", languages: ["en"] }],
+      expectedOutputs: [{ type: "text", languages: ["en"] }],
+    });
   } catch {
-    warmed = false;
+    warmed = null;
   }
 }
 

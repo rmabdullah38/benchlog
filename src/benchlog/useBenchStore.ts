@@ -2,6 +2,7 @@
 // and Firebase AI Logic hybrid inference. The UI components only see this hook's return value.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { signOut } from "firebase/auth";
+import { InferenceMode } from "firebase/ai";
 import { auth, config, loadRemoteConfig, upgradeToGoogle, whenSignedIn } from "../core/firebase";
 import {
   askNotebook,
@@ -332,6 +333,20 @@ export function useBenchStore() {
     }
   }, []);
   const onSignOut = useCallback(() => { void signOut(auth); }, []);
+
+  // Eval hook for the accuracy harness (eval/README.md); only exposed with ?debug=1.
+  useEffect(() => {
+    if (!new URLSearchParams(location.search).has("debug")) return;
+    (self as unknown as Record<string, unknown>).__benchlog = {
+      structure: (raw: string, mode: InferenceMode) =>
+        structureEntry(raw, null, null, { forceMode: mode }).then((r) => ({
+          ...r.value,
+          measurements: reconcile(raw, r.value.measurements),
+          source: r.source,
+          ms: Math.round(r.ms),
+        })),
+    };
+  }, []);
 
   return {
     experiments, experiment, experimentId, setExperimentId, entries: visible, allEntries: entries, activity,
