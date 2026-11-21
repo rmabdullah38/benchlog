@@ -136,6 +136,17 @@ function sourceOf(s: string | undefined): Source {
   return s === "on_device" ? "on_device" : "in_cloud";
 }
 
+/** Notes when the SDK fell back to the other side, so the UI explains what happened. */
+function withFallback(r: RouteDecision, source: Source): RouteDecision {
+  if (r.mode === InferenceMode.PREFER_ON_DEVICE && source === "in_cloud") {
+    return { ...r, reason: `${r.reason} → cloud fallback (Nano not available)` };
+  }
+  if (r.mode === InferenceMode.PREFER_IN_CLOUD && source === "on_device") {
+    return { ...r, reason: `${r.reason} → on-device fallback (cloud unreachable)` };
+  }
+  return r;
+}
+
 // ---------------------------------------------------------------------------
 // Prompts and schema
 // ---------------------------------------------------------------------------
@@ -203,7 +214,8 @@ export async function structureEntry(
 
   const res = await model("structure", r.mode, !!image).generateContent(parts);
   const value = normalize(JSON.parse(res.response.text()));
-  return { value, source: sourceOf(res.response.inferenceSource), route: r, ms: performance.now() - t0 };
+  const source = sourceOf(res.response.inferenceSource);
+  return { value, source, route: withFallback(r, source), ms: performance.now() - t0 };
 }
 
 function normalize(v: Partial<StructuredEntry>): StructuredEntry {
@@ -288,5 +300,6 @@ async function stream(
     onChunk(text);
   }
   const final = await res.response;
-  return { value: text, source: sourceOf(final.inferenceSource), route: r, ms: performance.now() - t0 };
+  const source = sourceOf(final.inferenceSource);
+  return { value: text, source, route: withFallback(r, source), ms: performance.now() - t0 };
 }

@@ -28,7 +28,7 @@ export function sampleEntries(): Seed[] {
       summary: `Calibrated electrode #3 in pH 4/7/10 buffers. Slope ${slope} mV/pH, offset ${offset} mV.`,
       setup: "Electrode #3 vs Ag/AgCl, 25 °C bath, Gamry OCP mode",
       measurements: [
-        { name: "Sensitivity", value: slope, unit: "mV/pH" },
+        { name: "Slope", value: slope, unit: "mV/pH" },
         { name: "Offset", value: offset, unit: "mV" },
       ],
       anomalies: [],
