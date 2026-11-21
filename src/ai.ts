@@ -99,9 +99,9 @@ export function route(task: Task, inputChars: number, opts: { private?: boolean 
 // A configuration lives for the life of a model instance, so cache one per (task, mode).
 const models = new Map<string, GenerativeModel>();
 
-function model(task: Task, mode: InferenceMode, withImage = false): GenerativeModel {
+function model(task: Task, mode: InferenceMode, withImage = false, cloudModel?: string): GenerativeModel {
   // Image input gets its own session config so text-only devices still run text on-device.
-  const key = `${task}:${mode}:${withImage}`;
+  const key = `${task}:${mode}:${withImage}:${cloudModel ?? ""}`;
   const cached = models.get(key);
   if (cached) return cached;
 
@@ -110,7 +110,7 @@ function model(task: Task, mode: InferenceMode, withImage = false): GenerativeMo
   const m = getGenerativeModel(ai, {
     mode,
     inCloudParams: {
-      model: task === "report" ? config.reportModel() : config.cloudModel(),
+      model: cloudModel ?? (task === "report" ? config.reportModel() : config.cloudModel()),
       systemInstruction: system,
       generationConfig: json
         ? { responseMimeType: "application/json", responseSchema: entrySchema, temperature: 0.2 }
@@ -273,17 +273,41 @@ export async function writeReport(
   experiments: Experiment[],
   onChunk: (text: string) => void,
 ): Promise<AIResult<string>> {
-  let r = route("report", 0, {});
-  if (r.mode === InferenceMode.ONLY_ON_DEVICE) {
-    // Offline draft: the on-device context is small, so summarize recent work only.
-    const n = config.onDeviceContextEntries();
-    if (entries.length > n) r = { ...r, reason: `${r.reason}: draft from last ${n} entries` };
-    entries = entries.slice(-n);
-  } else {
-    entries = entries.filter((e) => !e.private); // private entries never go to the cloud
-  }
+  // Reports may be shared with a PI, so private entries are never included.
+  const shared = entries.filter((e) => !e.private);
   const exps = experiments.map((x) => `- ${x.name}: ${x.goal ?? ""}`).join("\n");
-  return stream("report", r, `Experiments:\n${exps}\n\nEntries:\n${entryContext(entries)}`, onChunk);
+  const prompt = (list: Entry[]) => `Experiments:\n${exps}\n\nEntries:\n${entryContext(list)}`;
+
+  // On-device draft: the local context window is small, so summarize recent work only.
+  const onDevice = (reason: string) => {
+    const n = config.onDeviceContextEntries();
+    const recent = shared.slice(-n);
+    const why = shared.length > n ? `${reason}: draft from last ${n} entries` : reason;
+    return stream("report", { mode: InferenceMode.ONLY_ON_DEVICE, reason: why }, prompt(recent), onChunk);
+  };
+
+  if (!navigator.onLine) return onDevice("Offline: on-device");
+
+  // Online: long-context report in the cloud. If the report model errors, retry once with
+  // the lighter cloud model before falling back to an on-device draft.
+  const cloud = { mode: InferenceMode.ONLY_IN_CLOUD, reason: "Long-context report: cloud" };
+  try {
+    return await stream("report", cloud, prompt(shared), onChunk);
+  } catch (e1) {
+    console.warn("Report model failed, retrying with", config.cloudModel(), e1);
+    try {
+      return await stream(
+        "report",
+        { ...cloud, reason: `${cloud.reason} (retried on ${config.cloudModel()})` },
+        prompt(shared),
+        onChunk,
+        config.cloudModel(),
+      );
+    } catch (e2) {
+      console.warn("Cloud report failed, drafting on-device", e2);
+      return onDevice("Cloud error → on-device draft");
+    }
+  }
 }
 
 async function stream(
@@ -291,9 +315,10 @@ async function stream(
   r: RouteDecision,
   prompt: string,
   onChunk: (t: string) => void,
+  cloudModel?: string,
 ): Promise<AIResult<string>> {
   const t0 = performance.now();
-  const res = await model(task, r.mode).generateContentStream(prompt);
+  const res = await model(task, r.mode, false, cloudModel).generateContentStream(prompt);
   let text = "";
   for await (const chunk of res.stream) {
     text += chunk.text();

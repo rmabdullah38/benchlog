@@ -124,11 +124,15 @@ async function refreshNano() {
   el.title = title;
   el.disabled = nano !== "downloadable";
   if (nano === "available") void processQueue();
+  // Chrome keeps downloading in the background; poll until the model is ready.
+  if (nano === "downloading") setTimeout(refreshNano, 10_000);
 }
 
 $("nano").addEventListener("click", async () => {
   if (nano !== "downloadable") return;
-  const el = $("nano");
+  const el = $<HTMLButtonElement>("nano");
+  el.textContent = "⬇ Downloading Nano…";
+  el.disabled = true;
   try {
     await downloadOnDeviceModel((p) => (el.textContent = `⬇ Nano ${Math.round(p * 100)}%`));
   } catch (e) {

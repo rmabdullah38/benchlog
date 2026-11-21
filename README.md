@@ -17,7 +17,7 @@ Built for [#BuildHybridAI 2026](https://firebasehybridaihackathon.devpost.com/),
 | **Private entries** (unpublished data, anything patient-adjacent) | **On-device only** (`ONLY_ON_DEVICE`) | The text and photo never leave the laptop. If Nano isn't ready, the entry waits rather than going to the cloud |
 | Ask a question about recent work | On-device first | Quick lookups don't need a datacenter |
 | Ask across the whole notebook / long inputs | **Cloud** (`PREFER_IN_CLOUD`) | On-device context is small; Gemini in the cloud reads everything |
-| Weekly report | **Cloud** (`PREFER_IN_CLOUD`), on-device draft when offline | Long-context synthesis |
+| Weekly report | **Cloud** (`ONLY_IN_CLOUD`), retried on a lighter cloud model on error, then an on-device draft; on-device draft when offline | Long-context synthesis that still works when the cloud doesn't |
 
 A small router (`src/ai.ts`) chooses the `InferenceMode` per call based on task, input length, connectivity and the privacy flag. It records **why** each call ran where it did. Every result shows an ⚡ On-device or ☁ Cloud badge using `response.inferenceSource`, and the *AI activity* tab logs every routing decision.
 
