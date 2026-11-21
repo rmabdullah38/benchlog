@@ -80,7 +80,7 @@ export const remoteConfig = getRemoteConfig(app);
 remoteConfig.settings.minimumFetchIntervalMillis = 60 * 60 * 1000;
 remoteConfig.defaultConfig = {
   cloud_model: "gemini-3.5-flash-lite",
-  report_model: "gemini-3.5-flash",
+  report_model: "gemini-3.5-flash-lite",
   // Inputs longer than this go to the cloud when online (on-device context is small).
   on_device_max_chars: 4000,
   // How many recent entries the on-device model sees when answering offline.

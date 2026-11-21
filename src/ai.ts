@@ -10,6 +10,7 @@ import {
   getGenerativeModel,
   InferenceMode,
   Schema,
+  ThinkingLevel,
   type GenerativeModel,
   type Part,
 } from "firebase/ai";
@@ -114,7 +115,10 @@ function model(task: Task, mode: InferenceMode, withImage = false, cloudModel?: 
       systemInstruction: system,
       generationConfig: json
         ? { responseMimeType: "application/json", responseSchema: entrySchema, temperature: 0.2 }
-        : { temperature: 0.4 },
+        : task === "report" && !cloudModel
+          ? // Reports are summaries, not puzzles: low thinking keeps them fast.
+            { temperature: 0.4, thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
+          : { temperature: 0.4 },
     },
     onDeviceParams: {
       createOptions: {
@@ -292,7 +296,7 @@ export async function writeReport(
   // the lighter cloud model before falling back to an on-device draft.
   const cloud = { mode: InferenceMode.ONLY_IN_CLOUD, reason: "Long-context report: cloud" };
   try {
-    return await stream("report", cloud, prompt(shared), onChunk);
+    return await stream("report", cloud, prompt(shared), onChunk, undefined, 45_000);
   } catch (e1) {
     console.warn("Report model failed, retrying with", config.cloudModel(), e1);
     try {
@@ -302,6 +306,7 @@ export async function writeReport(
         prompt(shared),
         onChunk,
         config.cloudModel(),
+        45_000,
       );
     } catch (e2) {
       console.warn("Cloud report failed, drafting on-device", e2);
@@ -316,9 +321,13 @@ async function stream(
   prompt: string,
   onChunk: (t: string) => void,
   cloudModel?: string,
+  timeout?: number,
 ): Promise<AIResult<string>> {
   const t0 = performance.now();
-  const res = await model(task, r.mode, false, cloudModel).generateContentStream(prompt);
+  const res = await model(task, r.mode, false, cloudModel).generateContentStream(
+    prompt,
+    timeout ? { timeout } : undefined,
+  );
   let text = "";
   for await (const chunk of res.stream) {
     text += chunk.text();

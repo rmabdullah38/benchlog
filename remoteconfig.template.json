@@ -1,7 +1,7 @@
 {
   "parameters": {
     "cloud_model": { "defaultValue": { "value": "gemini-3.5-flash-lite" }, "description": "Cloud model for structuring and Q&A", "valueType": "STRING" },
-    "report_model": { "defaultValue": { "value": "gemini-3.5-flash" }, "description": "Cloud model for long-context weekly reports", "valueType": "STRING" },
+    "report_model": { "defaultValue": { "value": "gemini-3.5-flash-lite" }, "description": "Cloud model for long-context weekly reports", "valueType": "STRING" },
     "on_device_max_chars": { "defaultValue": { "value": "4000" }, "description": "Inputs longer than this go to the cloud when online", "valueType": "NUMBER" },
     "on_device_context_entries": { "defaultValue": { "value": "8" }, "description": "Recent entries the on-device model sees offline", "valueType": "NUMBER" },
     "anomaly_z_threshold": { "defaultValue": { "value": "3" }, "description": "z-score that flags a measurement as drift", "valueType": "NUMBER" }
