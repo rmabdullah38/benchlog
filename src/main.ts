@@ -1,5 +1,6 @@
 import "./style.css";
 import { marked } from "marked";
+import { InferenceMode } from "firebase/ai";
 import DOMPurify from "dompurify";
 import { auth, config, loadRemoteConfig, upgradeToGoogle, whenSignedIn } from "./firebase";
 import {
@@ -7,22 +8,26 @@ import {
   downloadOnDeviceModel,
   onDeviceAvailability,
   structureEntry,
+  warmUpOnDevice,
   writeReport,
   type AIResult,
   type Task,
 } from "./ai";
 import { driftAnomalies, series } from "./anomaly";
+import { reconcile, scan } from "./extract";
+import { checkSpecs, parseSpecs } from "./specs";
 import {
   addEntry,
   addExperiment,
   removeEntry,
+  updateExperiment,
   setUser,
   updateEntry,
   watchEntries,
   watchExperiments,
 } from "./store";
 import { sampleExperiment, sampleEntries } from "./sample";
-import type { Entry, Experiment } from "./types";
+import type { Anomaly, Entry, Experiment, Measurement } from "./types";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -123,7 +128,14 @@ async function refreshNano() {
   el.className = `pill ${cls}`;
   el.title = title;
   el.disabled = nano !== "downloadable";
-  if (nano === "available") void processQueue();
+  if (nano === "available") {
+    void processQueue();
+    // Pre-load the model while the user is still typing.
+    const idle = (self as unknown as { requestIdleCallback?: (cb: () => void) => void }).requestIdleCallback ?? ((cb: () => void) => setTimeout(cb, 1500));
+    idle(() => {
+      if (!entries.some((e) => e.status === "queued" || e.status === "processing")) void warmUpOnDevice();
+    });
+  }
   // Chrome keeps downloading in the background; poll until the model is ready.
   if (nano === "downloading") setTimeout(refreshNano, 10_000);
 }
@@ -182,16 +194,36 @@ $("experiment").addEventListener("change", (e) => {
   renderTimeline();
   renderTrends();
 });
+let editingExp: string | null = null;
 $("new-exp").addEventListener("click", () => {
+  editingExp = null;
+  $<HTMLFormElement>("exp-form").reset();
+  $("exp-submit").textContent = "Create";
   $("exp-form").hidden = false;
   $("exp-name").focus();
+});
+$("edit-exp").addEventListener("click", () => {
+  const x = experiments.find((e) => e.id === currentExp);
+  if (!x) return toast("Pick an experiment first.");
+  editingExp = x.id;
+  $<HTMLInputElement>("exp-name").value = x.name;
+  $<HTMLInputElement>("exp-goal").value = x.goal ?? "";
+  $<HTMLInputElement>("exp-specs").value = x.specs ?? "";
+  $("exp-submit").textContent = "Save";
+  $("exp-form").hidden = false;
+  $("exp-specs").focus();
 });
 $("exp-cancel").addEventListener("click", () => ($("exp-form").hidden = true));
 $("exp-form").addEventListener("submit", (e) => {
   e.preventDefault();
   const name = $<HTMLInputElement>("exp-name").value.trim();
   if (!name) return;
-  addExperiment(name, $<HTMLInputElement>("exp-goal").value.trim());
+  const goal = $<HTMLInputElement>("exp-goal").value.trim();
+  const specs = $<HTMLInputElement>("exp-specs").value.trim();
+  const bad = specs && parseSpecs(specs).length < specs.split(/[;\n]+/).filter((x) => x.trim()).length;
+  if (bad) toast("Some specs weren't understood. Use e.g. “Slope 55-60 mV/pH; Offset < 10 mV”.");
+  if (editingExp) updateExperiment(editingExp, { name, goal, specs });
+  else addExperiment(name, goal, Date.now(), specs);
   $<HTMLFormElement>("exp-form").reset();
   $("exp-form").hidden = true;
 });
@@ -282,13 +314,11 @@ async function processQueue() {
         const img = next.photo ? { mimeType: "image/jpeg", data: next.photo.split(",")[1] } : null;
         const res = await structureEntry(next.raw, img, exp, { private: next.private });
         log("structure", res);
-        const history = entries.filter(
-          (e) => e.id !== next.id && e.experimentId === next.experimentId && e.createdAt < next.createdAt,
-        );
-        const stats = driftAnomalies(res.value.measurements, history, config.anomalyZ());
+        // Cross-check the model against a deterministic scan of the note.
+        res.value.measurements = reconcile(next.raw, res.value.measurements);
         res.value.anomalies = [
           ...res.value.anomalies.map((a) => ({ ...a, origin: "model" as const })),
-          ...stats,
+          ...ruleChecks(next, res.value.measurements),
         ];
         updateEntry(next.id, {
           status: "done",
@@ -309,6 +339,31 @@ async function processQueue() {
   } finally {
     processing = false;
   }
+}
+
+/** Deterministic checks (drift vs history, experiment spec limits). No model involved. */
+function ruleChecks(entry: Entry, measurements: Measurement[]): Anomaly[] {
+  const history = entries.filter(
+    (e) => e.id !== entry.id && e.experimentId === entry.experimentId && e.createdAt < entry.createdAt,
+  );
+  const exp = experiments.find((x) => x.id === entry.experimentId);
+  return [
+    ...checkSpecs(measurements, parseSpecs(exp?.specs)),
+    ...driftAnomalies(measurements, history, config.anomalyZ()),
+  ];
+}
+
+/** Applies a user edit to an entry's measurements and re-runs the rule checks. */
+function editMeasurements(entry: Entry, measurements: Measurement[]) {
+  if (!entry.structured) return;
+  const modelAnoms = entry.structured.anomalies.filter((a) => !a.origin || a.origin === "model");
+  updateEntry(entry.id, {
+    structured: {
+      ...entry.structured,
+      measurements,
+      anomalies: [...modelAnoms, ...ruleChecks(entry, measurements)],
+    },
+  });
 }
 
 function friendly(err: unknown) {
@@ -352,12 +407,23 @@ function renderTimeline() {
             : e.status === "error"
               ? `<span class="badge error" title="${esc(e.error ?? "")}">Failed</span> <button class="link retry" data-id="${e.id}">Retry</button>`
               : badge(e.source, e.latencyMs, e.routeReason);
-      const meas = s?.measurements.length
-        ? `<div class="meas">${s.measurements.map((m) => `<span class="chip mono">${esc(m.name)} <b>${fmtNum(m.value)}</b> ${esc(m.unit)}</span>`).join("")}</div>`
+      const meas = s
+        ? `<div class="meas">${s.measurements
+            .map(
+              (m, i) =>
+                `<span class="chip mono ${m.origin === "auto" ? "auto" : ""} ${m.unverified ? "unverified" : ""}" data-entry="${e.id}" data-idx="${i}" tabindex="0" title="Click to edit. ${
+                  m.origin === "auto"
+                    ? "Found by BenchLog's number scanner (the model missed it)"
+                    : m.unverified
+                      ? "This number doesn't appear in your note. Check it."
+                      : ""
+                }">${esc(m.name)} <b>${fmtNum(m.value)}</b> ${esc(m.unit)}${m.origin === "auto" ? " ·auto" : ""}${m.unverified ? " ⚠" : ""}</span>`,
+            )
+            .join("")}<button class="chip add-meas" data-entry="${e.id}" title="Add a measurement">+</button></div>`
         : "";
       const anom = s?.anomalies.length
         ? `<ul class="anoms">${s.anomalies
-            .map((a) => `<li class="anom ${a.severity}"><span class="sev">${a.origin === "stats" ? "Drift" : a.severity}</span>${esc(a.description)}</li>`)
+            .map((a) => `<li class="anom ${a.severity}"><span class="sev">${a.origin === "stats" ? "Drift" : a.origin === "spec" ? "Spec" : a.severity}</span>${esc(a.description)}</li>`)
             .join("")}</ul>`
         : "";
       const fu = s?.followUps.length
@@ -384,7 +450,50 @@ function renderTimeline() {
     .join("");
 }
 
+// Click a measurement chip to correct it ("Slope 57.9 mV/pH"); clear it to delete.
+function openChipEditor(chip: HTMLElement) {
+  const entry = entries.find((x) => x.id === chip.dataset.entry);
+  if (!entry?.structured) return;
+  const idx = chip.dataset.idx !== undefined ? Number(chip.dataset.idx) : -1;
+  const cur = idx >= 0 ? entry.structured.measurements[idx] : null;
+  const input = document.createElement("input");
+  input.className = "chip-edit mono";
+  input.value = cur ? `${cur.name} ${cur.value} ${cur.unit}` : "";
+  input.placeholder = "name value unit";
+  chip.replaceWith(input);
+  input.focus();
+  input.select();
+  let done = false;
+  const commit = (save: boolean) => {
+    if (done) return;
+    done = true;
+    const list = [...entry.structured!.measurements];
+    if (save) {
+      const text = input.value.trim();
+      const hit = scan(text).pop();
+      if (!text && idx >= 0) list.splice(idx, 1);
+      else if (hit) {
+        const name = text.slice(0, text.lastIndexOf(String(hit.value).replace(/^-/, ""))).replace(/[-+\s]+$/, "").trim();
+        const m: Measurement = { name: name || hit.name, value: hit.value, unit: hit.unit };
+        if (idx >= 0) list[idx] = m;
+        else list.push(m);
+      } else if (text) {
+        toast("Couldn't read that. Try “Slope 57.9 mV/pH”.");
+      }
+      editMeasurements(entry, list);
+    }
+    renderTimeline();
+  };
+  input.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") commit(true);
+    if (ev.key === "Escape") commit(false);
+  });
+  input.addEventListener("blur", () => commit(true));
+}
+
 $("timeline").addEventListener("click", (e) => {
+  const chip = (e.target as HTMLElement).closest<HTMLElement>("[data-entry]");
+  if (chip) return openChipEditor(chip);
   const t = e.target as HTMLElement;
   const id = t.dataset.id;
   if (!id) return;
@@ -458,6 +567,33 @@ $("report-dl").addEventListener("click", () => {
   a.click();
 });
 
+function exportCsv() {
+  const q = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const rows = [["entry", "time", "experiment", "title", "measurement", "value", "unit", "source", "flags"]];
+  for (const e of visible()) {
+    const exp = experiments.find((x) => x.id === e.experimentId)?.name ?? "";
+    const flags = (e.structured?.anomalies ?? []).map((a) => a.description).join(" | ");
+    for (const m of e.structured?.measurements ?? []) {
+      rows.push([
+        `#${e.seq}`,
+        new Date(e.createdAt).toISOString(),
+        exp,
+        e.structured?.title ?? "",
+        m.name,
+        String(m.value),
+        m.unit,
+        m.origin === "auto" ? "scanner" : (e.source ?? "sample"),
+        flags,
+      ]);
+    }
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([rows.map((r) => r.map(q).join(",")).join("\n")], { type: "text/csv" }));
+  a.download = `benchlog-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+}
+$("csv-btn").addEventListener("click", exportCsv);
+
 function renderTrends() {
   const s = [...series(visible()).values()].filter((x) => x.values.length >= 2);
   $("trends").innerHTML = s.length
@@ -509,6 +645,20 @@ $("seed").addEventListener("click", () => {
   sampleEntries().forEach((s, i) => addEntry({ ...s, seq: base + i + 1, experimentId: id }));
   toast("Sample loaded. Try logging: “Slope today 51.2 mV/pH, offset +9 mV”");
 });
+
+// Eval hook for the accuracy harness (eval/README.md): only exposed with ?debug=1.
+if (new URLSearchParams(location.search).has("debug")) {
+  (self as unknown as Record<string, unknown>).__benchlog = {
+    structure: (raw: string, mode: InferenceMode) =>
+      structureEntry(raw, null, null, { forceMode: mode }).then((r) => ({
+        ...r.value,
+        measurements: reconcile(raw, r.value.measurements),
+        source: r.source,
+        ms: Math.round(r.ms),
+      })),
+    reconcile,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Utils

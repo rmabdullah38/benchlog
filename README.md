@@ -25,6 +25,10 @@ A small router (`src/ai.ts`) chooses the `InferenceMode` per call based on task,
 
 - **Capture anything, structure it automatically.** Free-form notes become entries with title, kind, setup, measurements (`name`, `value`, `unit`), anomalies, tags and follow-ups. The same JSON schema is used on-device (`responseConstraint`) and in the cloud (`responseSchema`).
 - **Photo readings.** Attach a photo of a meter or scope; the model reads the displayed value.
+- **Number scanner as a safety net.** A deterministic number+unit scanner runs alongside the model: it adds any measurement the model missed (marked *auto*), normalizes units (kohm → kΩ, uV → µV) and flags any model number that doesn't appear in the note (⚠). See [eval/README.md](eval/README.md) for the accuracy test: recall went from 0.88 to 1.00.
+- **Spec limits.** Give an experiment specs like `Slope 55-60 mV/pH; Offset < 10 mV` and out-of-spec readings are flagged automatically.
+- **Correct anything.** Click a measurement to fix it, or + to add one; drift and spec checks re-run.
+- **Export CSV** of every measurement for plotting or a lab report.
 - **Drift detection.** A deterministic check compares each new measurement with earlier readings of the same quantity in the experiment and flags anything beyond a z-score threshold, e.g. *"Slope = 51.2 mV/pH is 27.8σ below its mean of 57.95 mV/pH over 6 earlier readings."* No model needed, so it also works offline.
 - **Offline-first.** Firestore's persistent local cache stores every entry in IndexedDB. A service worker caches the app shell, so BenchLog opens with no connection at all. A queue structures entries as soon as *any* allowed model is reachable.
 - **Private mode.** A per-entry 🔒 toggle keeps processing on-device. Private entries are filtered out of every cloud prompt (Ask and Report).
@@ -48,6 +52,8 @@ A small router (`src/ai.ts`) chooses the `InferenceMode` per call based on task,
 src/ai.ts        Hybrid router, model configs, prompts, schema, streaming
 src/firebase.ts  App, App Check, Auth, Firestore (offline cache), Remote Config, AI
 src/anomaly.ts   Deterministic drift detection and trend series
+src/extract.ts   Number+unit scanner, unit normalization, cross-check of model output
+src/specs.ts     Spec-limit parsing and checks
 src/store.ts     Firestore reads/writes (non-blocking so they work offline)
 src/main.ts      UI, processing queue, status pills, panels
 src/sample.ts    A week of sample calibration data for first-time users

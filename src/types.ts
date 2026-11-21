@@ -2,13 +2,17 @@ export interface Measurement {
   name: string;
   value: number;
   unit: string;
+  /** "auto" = recovered by the deterministic scanner, not the model. */
+  origin?: "model" | "auto";
+  /** The model reported a number that doesn't appear in the note. */
+  unverified?: boolean;
 }
 
 export interface Anomaly {
   description: string;
   severity: "low" | "medium" | "high";
-  /** "model" = flagged by the language model; "stats" = flagged by the drift check. */
-  origin?: "model" | "stats";
+  /** "model" = language model; "stats" = drift check; "spec" = outside the experiment's spec limits. */
+  origin?: "model" | "stats" | "spec";
 }
 
 export interface StructuredEntry {
@@ -47,5 +51,7 @@ export interface Experiment {
   id: string;
   name: string;
   goal?: string;
+  /** Spec limits, e.g. "Slope 55-60 mV/pH; Offset < 10 mV". */
+  specs?: string;
   createdAt: number;
 }

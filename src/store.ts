@@ -59,8 +59,12 @@ export function removeEntry(id: string) {
   void deleteDoc(doc(entriesCol(), id)).catch(console.error);
 }
 
-export function addExperiment(name: string, goal: string, createdAt = Date.now()): string {
+export function addExperiment(name: string, goal: string, createdAt = Date.now(), specs = ""): string {
   const ref = doc(experimentsCol());
-  void setDoc(ref, { name, goal, createdAt }).catch(console.error);
+  void setDoc(ref, { name, goal, specs, createdAt }).catch(console.error);
   return ref.id;
+}
+
+export function updateExperiment(id: string, patch: Partial<Omit<Experiment, "id">>) {
+  void updateDoc(doc(experimentsCol(), id), patch).catch(console.error);
 }

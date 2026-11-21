@@ -138,6 +138,8 @@ input:focus, textarea:focus, select:focus { outline: 2px solid color-mix(in srgb
 .meas { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
 .chip { font-size: 12.5px; padding: 3px 8px; border-radius: 6px; background: var(--paper); border: 1px solid var(--line); }
 .chip b { font-weight: 500; color: var(--accent); }
+.chip.auto { border-style: dashed; }
+.chip.unverified { border-color: var(--warn); background: var(--warn-bg); }
 .anoms { list-style: none; padding: 0; margin: 8px 0; display: flex; flex-direction: column; gap: 6px; }
 .anom { font-size: 13.5px; padding: 6px 10px; border-radius: 6px; background: var(--warn-bg); color: var(--ink); display: flex; gap: 8px; align-items: baseline; }
 .anom.high { background: var(--bad-bg); }
@@ -191,3 +193,8 @@ input:focus, textarea:focus, select:focus { outline: 2px solid color-mix(in srgb
   position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); max-width: 90vw;
   background: var(--ink); color: var(--paper); padding: 10px 16px; border-radius: 8px; font-size: 14px; z-index: 10;
 }
+
+.chip[data-entry] { cursor: pointer; }
+.chip[data-entry]:hover { border-color: var(--accent); }
+.add-meas { color: var(--muted); padding: 3px 9px; }
+.chip-edit { font-size: 12.5px; padding: 3px 8px; width: 220px; }

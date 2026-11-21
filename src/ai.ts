@@ -10,7 +10,6 @@ import {
   getGenerativeModel,
   InferenceMode,
   Schema,
-  ThinkingLevel,
   type GenerativeModel,
   type Part,
 } from "firebase/ai";
@@ -75,6 +74,21 @@ export async function downloadOnDeviceModel(onProgress: (p: number) => void) {
   session.destroy();
 }
 
+/**
+ * Loads Gemini Nano into memory ahead of the first real note. The first on-device call
+ * otherwise pays a ~20 s cold start; the SDK keeps the session alive afterwards.
+ */
+let warmed = false;
+export async function warmUpOnDevice() {
+  if (warmed) return;
+  warmed = true;
+  try {
+    await model("structure", InferenceMode.ONLY_ON_DEVICE).generateContent("Raw note:\nwarm-up, ignore");
+  } catch {
+    warmed = false;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
@@ -115,10 +129,7 @@ function model(task: Task, mode: InferenceMode, withImage = false, cloudModel?: 
       systemInstruction: system,
       generationConfig: json
         ? { responseMimeType: "application/json", responseSchema: entrySchema, temperature: 0.2 }
-        : task === "report" && !cloudModel
-          ? // Reports are summaries, not puzzles: low thinking keeps them fast.
-            { temperature: 0.4, thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
-          : { temperature: 0.4 },
+        : { temperature: 0.4 },
     },
     onDeviceParams: {
       createOptions: {
@@ -156,11 +167,17 @@ function withFallback(r: RouteDecision, source: Source): RouteDecision {
 // ---------------------------------------------------------------------------
 const SYSTEM: Record<Task, string> = {
   structure:
-    "You turn a lab engineer's raw bench notes into a structured lab-notebook entry. " +
-    "Extract only what is stated or shown; never invent numbers. Keep units exactly as written " +
-    "(convert 'mV' etc. into the unit field). If a photo of an instrument is attached, read the " +
-    "displayed value and unit. Flag anything the note itself calls odd, out of spec, failed, " +
-    "noisy, drifting or unexpected as an anomaly. Title: under 8 words.",
+    "You turn a lab engineer's raw bench notes into a structured lab-notebook entry.\n" +
+    "Measurements: list EVERY number that has a unit, including test conditions (bias, frequency, " +
+    "scan rate, temperature, flow). Never invent or convert numbers. unit = the unit symbol only " +
+    "(e.g. mV, kΩ, µA, mL/min, %); put qualifiers like rms, pk-pk, peak or 'previous' in the name. " +
+    "Skip spec limits and targets (\"spec <1 nA\", \"should be 4.7k\").\n" +
+    "Anomalies: only problems the note itself states: out of spec, failed, low/high, worse, noisy, " +
+    "drifting, damaged, unexpected. Never flag things described as fine, stable, nominal or improved.\n" +
+    "If a photo of an instrument is attached, read the displayed value and unit. Title: under 8 words.\n" +
+    "Example note (format only; never copy its numbers): \"Gain 12.5 dB at 1 kHz, spec >15 dB, too low. " +
+    "Ripple 8 mV pk-pk, better than yesterday.\" -> measurements: Gain 12.5 dB; Frequency 1 kHz; " +
+    "Ripple (pk-pk) 8 mV. anomalies: \"Gain 12.5 dB is below the 15 dB spec\" (high).",
   ask:
     "You answer questions about a lab notebook. Use only the entries provided. Cite entries " +
     "by their [#n] tag. If the notes don't contain the answer, say so plainly. Be concise.",
@@ -169,6 +186,8 @@ const SYSTEM: Record<Task, string> = {
     "Sections: Summary (3 bullets), Experiments and results (with key numbers and units), " +
     "Anomalies and open issues, Next steps. Cite entries by their [#n] tag. Do not invent data.",
 };
+
+const EXAMPLE_VALUES = [12.5, 1, 15, 8];
 
 const entrySchema = Schema.object({
   properties: {
@@ -206,9 +225,9 @@ export async function structureEntry(
   raw: string,
   image: { mimeType: string; data: string } | null,
   experiment: Experiment | null,
-  opts: { private?: boolean },
+  opts: { private?: boolean; forceMode?: InferenceMode },
 ): Promise<AIResult<StructuredEntry>> {
-  const r = route("structure", raw.length, opts);
+  const r = opts.forceMode ? { mode: opts.forceMode, reason: "Forced (eval)" } : route("structure", raw.length, opts);
   const t0 = performance.now();
   const prompt =
     (experiment ? `Experiment: ${experiment.name}. ${experiment.goal ?? ""}\n` : "") +
@@ -218,6 +237,10 @@ export async function structureEntry(
 
   const res = await model("structure", r.mode, !!image).generateContent(parts);
   const value = normalize(JSON.parse(res.response.text()));
+  // Small models sometimes copy the prompt's example; drop example numbers the note doesn't contain.
+  value.measurements = value.measurements.filter(
+    (m) => !EXAMPLE_VALUES.includes(m.value) || raw.includes(String(m.value)),
+  );
   const source = sourceOf(res.response.inferenceSource);
   return { value, source, route: withFallback(r, source), ms: performance.now() - t0 };
 }
@@ -296,7 +319,7 @@ export async function writeReport(
   // the lighter cloud model before falling back to an on-device draft.
   const cloud = { mode: InferenceMode.ONLY_IN_CLOUD, reason: "Long-context report: cloud" };
   try {
-    return await stream("report", cloud, prompt(shared), onChunk, undefined, 45_000);
+    return await stream("report", cloud, prompt(shared), onChunk, undefined, 30_000);
   } catch (e1) {
     console.warn("Report model failed, retrying with", config.cloudModel(), e1);
     try {
@@ -306,7 +329,7 @@ export async function writeReport(
         prompt(shared),
         onChunk,
         config.cloudModel(),
-        45_000,
+        30_000,
       );
     } catch (e2) {
       console.warn("Cloud report failed, drafting on-device", e2);
@@ -324,14 +347,22 @@ async function stream(
   timeout?: number,
 ): Promise<AIResult<string>> {
   const t0 = performance.now();
-  const res = await model(task, r.mode, false, cloudModel).generateContentStream(
-    prompt,
-    timeout ? { timeout } : undefined,
-  );
+  // Hard deadline for the first token: the SDK's own timeout doesn't cover streaming.
+  const ctrl = new AbortController();
+  const timer = timeout ? setTimeout(() => ctrl.abort(), timeout) : undefined;
   let text = "";
-  for await (const chunk of res.stream) {
-    text += chunk.text();
-    onChunk(text);
+  let res;
+  try {
+    res = await model(task, r.mode, false, cloudModel).generateContentStream(prompt, {
+      signal: ctrl.signal,
+    });
+    for await (const chunk of res.stream) {
+      if (timer) clearTimeout(timer);
+      text += chunk.text();
+      onChunk(text);
+    }
+  } finally {
+    if (timer) clearTimeout(timer);
   }
   const final = await res.response;
   const source = sourceOf(final.inferenceSource);

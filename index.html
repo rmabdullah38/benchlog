@@ -18,6 +18,7 @@
       </div>
       <div class="exp-picker">
         <select id="experiment" aria-label="Experiment"></select>
+        <button id="edit-exp" class="ghost small" title="Edit this experiment's name, goal and spec limits">Specs</button>
         <button id="new-exp" class="ghost small" title="New experiment">+ Experiment</button>
       </div>
       <div class="status">
@@ -31,7 +32,8 @@
     <form id="exp-form" class="exp-form" hidden>
       <input id="exp-name" placeholder="Experiment name, e.g. pH sensor calibration, batch 7" required />
       <input id="exp-goal" placeholder="Goal (optional)" />
-      <button class="primary small">Create</button>
+      <input id="exp-specs" class="mono" placeholder="Spec limits (optional): Slope 55-60 mV/pH; Offset < 10 mV" />
+      <button id="exp-submit" class="primary small">Create</button>
       <button type="button" id="exp-cancel" class="ghost small">Cancel</button>
     </form>
 
@@ -90,6 +92,7 @@
         </div>
 
         <div data-panel="trends" class="panel card" hidden>
+          <div class="row"><button id="csv-btn" class="ghost small">Export CSV</button></div>
           <div id="trends"></div>
         </div>
 
