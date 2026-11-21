@@ -49,19 +49,20 @@ A small router (`src/ai.ts`) chooses the `InferenceMode` per call based on task,
 ## Code map
 
 ```
-src/ai.ts        Hybrid router, model configs, prompts, schema, streaming
-src/firebase.ts  App, App Check, Auth, Firestore (offline cache), Remote Config, AI
-src/anomaly.ts   Deterministic drift detection and trend series
-src/extract.ts   Number+unit scanner, unit normalization, cross-check of model output
-src/specs.ts     Spec-limit parsing and checks
-src/store.ts     Firestore reads/writes (non-blocking so they work offline)
-src/main.ts      UI, processing queue, status pills, panels
-src/sample.ts    A week of sample calibration data for first-time users
+src/core/ai.ts         Hybrid router, model configs, prompts, schema, streaming, report fallback chain
+src/core/firebase.ts   App, App Check, Auth, Firestore (offline cache), Remote Config, AI
+src/core/extract.ts    Number+unit scanner, unit normalization, cross-check of model output
+src/core/specs.ts      Spec-limit parsing and checks
+src/core/anomaly.ts    Deterministic drift detection
+src/core/store.ts      Firestore reads/writes (non-blocking so they work offline)
+src/benchlog/useBenchStore.ts  The single store hook: queue, routing, checks, actions
+src/benchlog/components/       UI (React + Tailwind + shadcn/ui), designed with Lovable
+eval/                  Accuracy test set and results
 ```
 
 ## Run it yourself
 
-Prerequisites: Node 20+, a Firebase project, and Chrome on desktop if you want on-device inference.
+Prerequisites: Node 22+, a Firebase project, and Chrome on desktop if you want on-device inference.
 
 1. **Create a Firebase project** and register a web app.
 2. In **AI Logic**, choose the Gemini Developer API (no-cost tier).

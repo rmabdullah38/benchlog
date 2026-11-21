@@ -1,10 +1,11 @@
 // A week of realistic bench notes, pre-structured, so judges can try drift detection,
 // Ask and Report right away. Sample entries carry no AI badge because no model produced them.
-import type { Entry } from "./types";
+import type { Entry } from "../benchlog/types";
 
 export const sampleExperiment = {
   name: "Catheter pH sensor: calibration batch 7",
   goal: "Track IrOx pH electrode sensitivity (target 55–60 mV/pH) and offset across daily recalibration.",
+  specs: "Slope 55-60 mV/pH; Offset < 10 mV",
 };
 
 type Seed = Omit<Entry, "id" | "seq" | "experimentId" | "pendingSync">;

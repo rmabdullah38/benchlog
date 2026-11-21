@@ -2,14 +2,14 @@
 //   "Slope 55-60 mV/pH; Offset < 10 mV; Leakage <= 1 nA; Temp 36.5 to 37.5 °C"
 // Any measurement outside its spec becomes a deterministic anomaly (no model involved).
 import { normalizeUnit, toSI } from "./extract";
-import type { Anomaly, Measurement } from "./types";
+import type { Anomaly, Measurement } from "../benchlog/types";
 
 export interface Spec {
   name: string;
   min?: number;
   max?: number;
   unit: string;
-  text: string;
+  raw: string;
 }
 
 const NUM = "[-+]?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?";
@@ -22,7 +22,7 @@ export function parseSpecs(text: string | undefined): Spec[] {
     if (!s) continue;
     let m = s.match(new RegExp(`^(.+?)\\s+(${NUM})\\s*(?:-|–|to|\\.\\.)\\s*(${NUM})\\s*(.*)$`, "i"));
     if (m) {
-      out.push({ name: m[1].trim(), min: +m[2], max: +m[3], unit: normalizeUnit(m[4]).unit, text: s });
+      out.push({ name: m[1].trim(), min: +m[2], max: +m[3], unit: normalizeUnit(m[4]).unit, raw: s });
       continue;
     }
     m = s.match(new RegExp(`^(.+?)\\s*(<=|≤|<|>=|≥|>)\\s*(${NUM})\\s*(.*)$`));
@@ -32,7 +32,7 @@ export function parseSpecs(text: string | undefined): Spec[] {
         name: m[1].trim(),
         ...(upper ? { max: +m[3] } : { min: +m[3] }),
         unit: normalizeUnit(m[4]).unit,
-        text: s,
+        raw: s,
       });
     }
   }
@@ -61,7 +61,7 @@ export function checkSpecs(measurements: Measurement[], specs: Spec[]): Anomaly[
         out.push({
           origin: "spec",
           severity: "high",
-          description: `${m.name} = ${m.value} ${m.unit} is ${high ? "above" : "below"} spec (${spec.text}).`,
+          description: `${m.name} = ${m.value} ${m.unit} is ${high ? "above" : "below"} spec (${spec.raw}).`,
         });
       }
     }

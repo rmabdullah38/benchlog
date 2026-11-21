@@ -1,6 +1,6 @@
 // Deterministic drift check: compares each new measurement with earlier readings of the
 // same quantity (same name and unit) in the same experiment. Runs locally, no model needed.
-import type { Anomaly, Entry, Measurement } from "./types";
+import type { Anomaly, Entry, Measurement } from "../benchlog/types";
 
 const key = (m: Measurement) =>
   `${m.name.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()}|${m.unit.trim()}`;

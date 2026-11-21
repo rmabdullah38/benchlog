@@ -11,7 +11,7 @@ import {
   deleteDoc,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import type { Entry, Experiment } from "./types";
+import type { Entry, Experiment } from "../benchlog/types";
 
 let uid = "";
 export function setUser(id: string) {

@@ -3,7 +3,7 @@
 //  - flags model numbers that never appear in the note (marked unverified)
 //  - normalizes units ("kohm" -> "kΩ", "uV" -> "µV") and moves qualifiers ("rms", "pk-pk")
 //    out of the unit and into the name, so drift checks compare like with like.
-import type { Measurement } from "./types";
+import type { Measurement } from "../benchlog/types";
 
 const PREFIX: Record<string, number> = { p: 1e-12, n: 1e-9, "µ": 1e-6, m: 1e-3, "": 1, k: 1e3, M: 1e6, G: 1e9 };
 // Units that are compared as-is (no SI prefix math).

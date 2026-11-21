@@ -14,7 +14,7 @@ import {
   type Part,
 } from "firebase/ai";
 import { ai, config } from "./firebase";
-import type { Entry, Experiment, StructuredEntry } from "./types";
+import type { Entry, Experiment, StructuredEntry } from "../benchlog/types";
 
 export type Task = "structure" | "ask" | "report";
 export type Source = "on_device" | "in_cloud";
