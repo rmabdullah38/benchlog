@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="BenchLog: an offline-first lab notebook. Gemini Nano structures your bench notes on-device; Gemini in the cloud writes the report." />
+    <title>BenchLog: the lab notebook that works where the wifi doesn't</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M9 3h6M10 3v6.5L4.6 18.2A1.8 1.8 0 0 0 6.1 21h11.8a1.8 1.8 0 0 0 1.5-2.8L14 9.5V3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M7.5 15h9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        <span>BenchLog</span>
+      </div>
+      <div class="exp-picker">
+        <select id="experiment" aria-label="Experiment"></select>
+        <button id="new-exp" class="ghost small" title="New experiment">+ Experiment</button>
+      </div>
+      <div class="status">
+        <span id="net" class="pill"></span>
+        <button id="nano" class="pill"></button>
+        <span id="sync" class="pill"></span>
+        <button id="account" class="ghost small"></button>
+      </div>
+    </header>
+
+    <form id="exp-form" class="exp-form" hidden>
+      <input id="exp-name" placeholder="Experiment name, e.g. pH sensor calibration, batch 7" required />
+      <input id="exp-goal" placeholder="Goal (optional)" />
+      <button class="primary small">Create</button>
+      <button type="button" id="exp-cancel" class="ghost small">Cancel</button>
+    </form>
+
+    <main class="layout">
+      <section class="notebook">
+        <form id="composer" class="card composer">
+          <textarea id="raw" rows="3" placeholder="What did you just do or see? e.g. 'Recal'd pH probe in 4/7/10 buffers, slope 57.9 mV/pH, offset +4 mV. Bit noisy at pH 10.'"></textarea>
+          <div id="photo-preview" class="photo-preview" hidden></div>
+          <div class="composer-row">
+            <label class="ghost small file-btn" title="Attach a photo of a meter, scope or setup">
+              <input id="photo" type="file" accept="image/*" capture="environment" hidden />
+              📷 Photo
+            </label>
+            <label class="toggle" title="Private entries are only ever processed by the on-device model">
+              <input id="private" type="checkbox" /> <span>🔒 Keep on this device</span>
+            </label>
+            <span class="spacer"></span>
+            <span class="hint">⌘↵</span>
+            <button class="primary">Log it</button>
+          </div>
+        </form>
+        <div id="empty" class="empty" hidden>
+          <p><strong>Your notebook is empty.</strong></p>
+          <p>Type a bench note above, or load a sample experiment to see drift detection and reports.</p>
+          <button id="seed" class="ghost">Load sample experiment</button>
+        </div>
+        <ol id="timeline" class="timeline"></ol>
+      </section>
+
+      <aside class="side">
+        <nav class="tabs" role="tablist">
+          <button data-tab="ask" class="active" role="tab">Ask</button>
+          <button data-tab="report" role="tab">Report</button>
+          <button data-tab="trends" role="tab">Trends</button>
+          <button data-tab="activity" role="tab">AI activity</button>
+        </nav>
+
+        <div data-panel="ask" class="panel card">
+          <form id="ask-form" class="ask-form">
+            <input id="question" placeholder="When did the slope start drifting?" autocomplete="off" />
+            <button class="primary small">Ask</button>
+          </form>
+          <label class="toggle"><input id="ask-private" type="checkbox" /> <span>🔒 On-device only (includes private entries)</span></label>
+          <div id="answer" class="answer md"></div>
+          <div id="answer-meta" class="meta"></div>
+        </div>
+
+        <div data-panel="report" class="panel card" hidden>
+          <p class="muted">Writes a weekly report across every shared entry in this experiment, with long context in the cloud. Offline, it drafts one on-device from recent entries.</p>
+          <div class="row">
+            <button id="report-btn" class="primary small">Write weekly report</button>
+            <button id="report-dl" class="ghost small" hidden>Download .md</button>
+          </div>
+          <div id="report" class="answer md"></div>
+          <div id="report-meta" class="meta"></div>
+        </div>
+
+        <div data-panel="trends" class="panel card" hidden>
+          <div id="trends"></div>
+        </div>
+
+        <div data-panel="activity" class="panel card" hidden>
+          <p class="muted">Every AI call, where it ran and why.</p>
+          <div id="split" class="split"></div>
+          <ol id="activity" class="activity"></ol>
+        </div>
+      </aside>
+    </main>
+    <div id="toast" class="toast" hidden></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
